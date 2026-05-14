@@ -67,6 +67,13 @@ cp -r template/my_project my_new_project
 python -m my_new_project.trainer_factory my_new_project/config.json
 ```
 
+Or use project entrypoints under `models/<ProjectName>/` (recommended):
+
+```bash
+python models/Rouge/train.py -c configs/default.json
+python models/Rouge/inference.py -c configs/default.json --input "[0.1, 0.2, 0.3]"
+```
+
 Or open the GUI:
 
 ```bash
@@ -106,6 +113,66 @@ Delphi expects a JSON config with this top-level structure:
 - Every key in `model` is forwarded into your model constructor (`MyModel(**model_cfg)`).
 - Keep only constructor kwargs in `model`; place project metadata in `extra`.
 
+### Project routing from JSON
+
+To ensure Delphi runs the correct project-specific training/inference scripts from `models/<ProjectName>/`, define routing in `extra`:
+
+- `extra.project_folder` (recommended): folder containing project scripts and local modules (for example `models/Rouge`)
+- `extra.project_name`: resolves scripts to `models/<project_name>/train.py` and `models/<project_name>/infer.py`
+- optional `extra.train_entrypoint`: explicit training script path override (relative to Delphi root)
+- optional `extra.infer_entrypoint`: explicit inference script path override (relative to Delphi root)
+- optional `extra.trainer_factory_path`: override factory path when it is not `<project_folder>/trainer_factory.py`
+
+Optional but recommended: define an explicit factory contract object in `extra.factory` so the selected factory can validate required build decisions (project, pipeline, profile, adapters).
+
+For maximum flexibility across very different projects (MLP/CNN/Transformer/custom losses), you can use a component-driven contract by setting `extra.trainer_factory_path` to `core/component_factory.py` and defining a `components` object with class/function import paths.
+
+Example:
+
+```json
+"extra": {
+    "project_folder": "models/Rouge",
+    "project_name": "Rouge",
+    "train_entrypoint": "models/Rouge/train.py",
+    "infer_entrypoint": "models/Rouge/infer.py",
+    "trainer_factory_path": "models/Rouge/trainer_factory.py",
+    "factory": {
+        "project": "Rouge",
+        "pipeline": "hash_inference_dnn",
+        "training_profile": "guided"
+    },
+    "model_type": "default"
+}
+```
+
+The GUI uses these keys when launching the primary Train/Infer actions, so each config can target a different project entrypoint without changing GUI code.
+
+### Component contract (class/function paths)
+
+Use this when users define their own classes/functions and want Delphi to load them from JSON.
+
+```json
+"extra": {
+    "project_folder": "models/MyProject",
+    "trainer_factory_path": "core/component_factory.py"
+},
+"components": {
+    "data_builder": "models.MyProject.project_components.build_data",
+    "model_class": "models.MyProject.model.MyModel",
+    "criterion_class": "torch.nn.CrossEntropyLoss",
+    "criterion_init": {"label_smoothing": "$loss.label_smoothing"},
+    "optimizer_class": "torch.optim.AdamW",
+    "trainer_class": "core.trainer.Trainer",
+    "trainer_init": {"grad_clip": "$trainer.grad_clip"},
+    "metric_fns": {
+        "accuracy": "models.MyProject.metrics.accuracy"
+    },
+    "inference_fn": "models.MyProject.project_components.run_inference"
+}
+```
+
+`$section.key` values are resolved from config (for example `$loss.label_smoothing`).
+
 ### Architecture flexibility
 
 Delphi supports any PyTorch architecture as long as your project wiring (`trainer_factory.py`) provides compatible model/data/loss logic. The generic trainer now supports:
@@ -127,6 +194,23 @@ The GUI launches train/infer scripts with:
 - optional infer overrides: `--input`, `--checkpoint`
 
 Your training/inference entry scripts should accept these flags if you want full GUI compatibility.
+
+### Entry point factory hook
+
+`models/<ProjectName>/train.py` and `models/<ProjectName>/inference.py` load your trainer wiring module from:
+
+- `extra.trainer_factory_path` (preferred), or
+- `extra.factory_path`, or
+- `trainer.factory_path`, or
+- fallback `template/my_project/trainer_factory.py`
+
+Optional: if the factory module exposes `run_inference(...)`, `inference.py` calls it directly; otherwise it falls back to a generic checkpoint + model-forward path.
+
+Routing summary:
+
+- script selection in GUI: `extra.project_folder` (preferred) or `extra.project_name` / explicit entrypoints
+- model wiring inside selected script: `<project_folder>/trainer_factory.py` by default, or `extra.trainer_factory_path`
+- deterministic build contract for the factory: `extra.factory` (project/pipeline/profile/...)
 
 ### Real-time epoch inference (flexible)
 
@@ -175,6 +259,7 @@ This matches your target structure where [runs](runs) holds folders for differen
 - Use [template/my_project/config.json](template/my_project/config.json) as a concrete example.
 - Use architecture-specific examples in [configs/examples](configs/examples):
     - [configs/examples/MLP_example.json](configs/examples/MLP_example.json)
+    - [configs/examples/MLP_component_example.json](configs/examples/MLP_component_example.json)
     - [configs/examples/CNN_example.json](configs/examples/CNN_example.json)
     - [configs/examples/transformer_example.json](configs/examples/transformer_example.json)
 
@@ -224,7 +309,8 @@ import tkinter as tk
 
 cfg = GUIConfig(
     title="MyProject Training GUI",
-    train_script="train.py",
+    train_script="models/MyProject/train.py",
+    infer_script="models/MyProject/infer.py",
     default_config="configs/config.json",
     runs_dir="runs",
 )
