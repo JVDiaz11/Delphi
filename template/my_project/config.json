@@ -41,6 +41,40 @@
   },
   "extra": {
     "_comment": "Put project/domain-specific metadata here.",
+    "_comment_project_folder": "Preferred: set project_folder to models/<ProjectName> to resolve train.py, infer.py, and local trainer_factory.py.",
+    "_comment_project_name": "Used by GUI to resolve models/<project_name>/train.py and models/<project_name>/infer.py.",
+    "_comment_entrypoints": "Optional explicit script overrides relative to Delphi root.",
+    "_comment_factory": "trainer_factory_path determines the actual model/data/trainer wiring.",
+    "_comment_factory_contract": "Optional contract object consumed by your project factory for strict validation.",
+    "project_folder": "models/my_project",
+    "project_name": "my_project",
+    "train_entrypoint": "models/my_project/train.py",
+    "infer_entrypoint": "models/my_project/infer.py",
+    "trainer_factory_path": "template/my_project/trainer_factory.py",
+    "factory": {
+      "project": "my_project",
+      "pipeline": "default",
+      "training_profile": "default"
+    },
     "model_type": "my_model_v1"
+  },
+  "components": {
+    "_comment": "Optional component-driven wiring (used when extra.trainer_factory_path = core/component_factory.py).",
+    "_comment_refs": "You can reference values via $section.key, e.g. $loss.label_smoothing.",
+    "data_builder": "models.my_project.project_components.build_data",
+    "model_class": "models.my_project.model.MyModel",
+    "criterion_class": "torch.nn.CrossEntropyLoss",
+    "criterion_init": {
+      "label_smoothing": "$loss.label_smoothing"
+    },
+    "optimizer_class": "torch.optim.AdamW",
+    "trainer_class": "core.trainer.Trainer",
+    "trainer_init": {
+      "grad_clip": "$trainer.grad_clip"
+    },
+    "metric_fns": {
+      "accuracy": "models.my_project.metrics.accuracy"
+    },
+    "inference_fn": "models.my_project.project_components.run_inference"
   }
 }

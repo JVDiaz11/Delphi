@@ -71,7 +71,11 @@ For the GUI, launch it with a custom `GUIConfig`:
 from gui.training_GUI import TrainingGUI, GUIConfig
 import tkinter as tk
 
-cfg = GUIConfig(title="MyProject", train_script="train.py")
+cfg = GUIConfig(
+    title="MyProject",
+    train_script="models/my_project/train.py",
+    infer_script="models/my_project/infer.py",
+)
 root = tk.Tk()
 TrainingGUI(root, config=cfg)
 root.mainloop()
@@ -120,6 +124,38 @@ See [configs/inference_payload_schema.md](../../configs/inference_payload_schema
 - `data.path` is project-specific and can point anywhere on disk.
 - Prefer absolute paths when datasets are not stored inside the Delphi repository.
 - Keep dataset location in each project config (do not hardcode shared local paths in code).
+
+### Project entrypoint routing
+
+- Place project scripts in `models/<ProjectName>/`.
+- In `config.json -> extra`, set `project_folder` (recommended) so GUI and entrypoints resolve:
+    - `models/<ProjectName>/train.py`
+    - `models/<ProjectName>/infer.py`
+- With `project_folder`, entrypoints also default to `<project_folder>/trainer_factory.py`.
+- Optionally override with explicit paths:
+    - `extra.train_entrypoint`
+    - `extra.infer_entrypoint`
+- Set `extra.trainer_factory_path` only if your factory is not at `<project_folder>/trainer_factory.py`.
+- Optionally define `extra.factory` as a strict contract object validated by your factory (for example project, pipeline, profile, backend).
+
+Example:
+
+```json
+"extra": {
+    "project_folder": "models/my_project",
+    "project_name": "my_project",
+    "train_entrypoint": "models/my_project/train.py",
+    "infer_entrypoint": "models/my_project/infer.py",
+    "trainer_factory_path": "template/my_project/trainer_factory.py",
+    "factory": {
+        "project": "my_project",
+        "pipeline": "default",
+        "training_profile": "default",
+        "backend": "internal"
+    },
+    "model_type": "my_model_v1"
+}
+```
 
 ### Architecture map clarity
 
