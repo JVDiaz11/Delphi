@@ -330,26 +330,42 @@ class SimpleGraph(ttk.Frame):
 class ActivationView(ttk.Frame):
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
         self.canvas = tk.Canvas(self, bg=BG2, highlightthickness=1, highlightbackground=BORDER)
-        self.canvas.pack(fill="both", expand=True)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.v_scroll = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.v_scroll.grid(row=0, column=1, sticky="ns")
+        self.canvas.configure(yscrollcommand=self.v_scroll.set)
         self.model_info: dict[str, Any] = {}
         self.activations: dict[str, list[float]] = {}
         self.gradients: dict[str, list[float]] = {}
         self.mode: str = "activations"
         self.title = "Model architecture"
         self.node_cap: int = 16
+        self.node_radius: int = 5
         self.zoom: float = 1.0
         self.pan_x: float = 0.0
         self.pan_y: float = 0.0
         self._drag_anchor: tuple[float, float] | None = None
+        self._redraw_scheduled: bool = False
+        self._redraw_interval_ms: int = 33
+        self._connection_color_cache: dict[tuple[int, int], str] = {}
         self.canvas.bind("<MouseWheel>", self._on_mouse_wheel)
         self.canvas.bind("<Button-4>", self._on_mouse_wheel_linux_up)
         self.canvas.bind("<Button-5>", self._on_mouse_wheel_linux_down)
-        self.canvas.bind("<ButtonPress-1>", self._start_pan)
-        self.canvas.bind("<B1-Motion>", self._drag_pan)
-        self.canvas.bind("<ButtonRelease-1>", self._end_pan)
         self.canvas.bind("<Double-Button-1>", self._reset_view_event)
-        self.after(75, self.redraw)
+        self._request_redraw()
+
+    def _request_redraw(self) -> None:
+        if self._redraw_scheduled:
+            return
+        self._redraw_scheduled = True
+        self.after(self._redraw_interval_ms, self._perform_redraw)
+
+    def _perform_redraw(self) -> None:
+        self._redraw_scheduled = False
+        self.redraw()
 
     def set_model(
         self,
@@ -360,29 +376,45 @@ class ActivationView(ttk.Frame):
         self.model_info = model_info or {}
         self.activations = activations or {}
         self.gradients = gradients or {}
-        self.redraw()
+        self._request_redraw()
+
+    def set_profiles(
+        self,
+        activations: dict[str, list[float]] | None = None,
+        gradients: dict[str, list[float]] | None = None,
+    ) -> None:
+        if activations is not None:
+            self.activations = activations or {}
+        if gradients is not None:
+            self.gradients = gradients or {}
+        self._request_redraw()
 
     def set_activations(self, activations: dict[str, list[float]] | None) -> None:
         self.activations = activations or {}
-        self.redraw()
+        self._request_redraw()
 
     def set_gradients(self, gradients: dict[str, list[float]] | None) -> None:
         self.gradients = gradients or {}
-        self.redraw()
+        self._request_redraw()
 
     def set_mode(self, mode: str) -> None:
         self.mode = "gradients" if str(mode).lower() == "gradients" else "activations"
-        self.redraw()
+        self._request_redraw()
 
     def set_node_cap(self, node_cap: int) -> None:
         self.node_cap = max(4, int(node_cap))
-        self.redraw()
+        self._request_redraw()
+
+    def set_node_radius(self, node_radius: int) -> None:
+        self.node_radius = max(2, min(14, int(node_radius)))
+        self._request_redraw()
 
     def reset_view(self) -> None:
         self.zoom = 1.0
         self.pan_x = 0.0
         self.pan_y = 0.0
-        self.redraw()
+        self.canvas.yview_moveto(0.0)
+        self._request_redraw()
 
     def _reset_view_event(self, _event: tk.Event | None = None) -> None:
         self.reset_view()
@@ -391,32 +423,13 @@ class ActivationView(ttk.Frame):
         delta = getattr(event, "delta", 0)
         if delta == 0:
             return
-        factor = 1.1 if delta > 0 else 1 / 1.1
-        self.zoom = min(6.0, max(0.4, self.zoom * factor))
-        self.redraw()
+        self.canvas.yview_scroll(-1 if delta > 0 else 1, "units")
 
     def _on_mouse_wheel_linux_up(self, _event: tk.Event) -> None:
-        self.zoom = min(6.0, max(0.4, self.zoom * 1.1))
-        self.redraw()
+        self.canvas.yview_scroll(-1, "units")
 
     def _on_mouse_wheel_linux_down(self, _event: tk.Event) -> None:
-        self.zoom = min(6.0, max(0.4, self.zoom / 1.1))
-        self.redraw()
-
-    def _start_pan(self, event: tk.Event) -> None:
-        self._drag_anchor = (float(event.x), float(event.y))
-
-    def _drag_pan(self, event: tk.Event) -> None:
-        if self._drag_anchor is None:
-            return
-        old_x, old_y = self._drag_anchor
-        self.pan_x += float(event.x) - old_x
-        self.pan_y += float(event.y) - old_y
-        self._drag_anchor = (float(event.x), float(event.y))
-        self.redraw()
-
-    def _end_pan(self, _event: tk.Event) -> None:
-        self._drag_anchor = None
+        self.canvas.yview_scroll(1, "units")
 
     def _default_graph(self) -> dict[str, Any]:
         seq_len = int(self.model_info.get("seq_len", 64))
@@ -504,6 +517,8 @@ class ActivationView(ttk.Frame):
         top: float,
         bottom: float,
         max_nodes: int,
+        node_gap: float,
+        overflow_mode: bool,
     ) -> tuple[list[tuple[float, float]], list[float], int, list[int]]:
         activation_key = str(stage.get("activation_key") or stage.get("id") or "")
         source = self.gradients if self.mode == "gradients" else self.activations
@@ -515,7 +530,7 @@ class ActivationView(ttk.Frame):
         if node_count == 1:
             positions = [(x, top + usable_h / 2)]
         else:
-            gap = usable_h / max(1, node_count - 1)
+            gap = node_gap if overflow_mode else usable_h / max(1, node_count - 1)
             positions = [(x, top + idx * gap) for idx in range(node_count)]
         return positions, samples, requested_nodes, source_indices
 
@@ -551,14 +566,125 @@ class ActivationView(ttk.Frame):
                 parsed.append((src, tgt, weight))
         return parsed
 
+    @staticmethod
+    def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+        value = color.lstrip("#")
+        if len(value) != 6:
+            return (0, 0, 0)
+        return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
+
+    @staticmethod
+    def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+        r, g, b = rgb
+        return f"#{max(0, min(255, int(r))):02x}{max(0, min(255, int(g))):02x}{max(0, min(255, int(b))):02x}"
+
+    @classmethod
+    def _blend_hex(cls, color_a: str, color_b: str, t: float) -> str:
+        t = max(0.0, min(1.0, float(t)))
+        a = cls._hex_to_rgb(color_a)
+        b = cls._hex_to_rgb(color_b)
+        blended = (
+            int(a[0] + (b[0] - a[0]) * t),
+            int(a[1] + (b[1] - a[1]) * t),
+            int(a[2] + (b[2] - a[2]) * t),
+        )
+        return cls._rgb_to_hex(blended)
+
+    @classmethod
+    def _connection_color_from_strength(cls, strength: float) -> str:
+        low_blue = BLUE
+        high_red = RED
+        return cls._blend_hex(low_blue, high_red, max(0.0, min(1.0, strength)))
+
+    def _draw_gradient_connection(
+        self,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        *,
+        strength: float,
+        width: int = 1,
+    ) -> None:
+        strength = max(0.0, min(1.0, float(strength)))
+        if strength <= 0.03:
+            self.canvas.create_line(x0, y0, x1, y1, fill=BORDER, width=max(1, int(width)))
+            return
+
+        signal_color = self._connection_color_from_strength(strength)
+        base_color = BORDER
+        length = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+        segments = max(6, min(14, int(length / 90) + 6))
+
+        strength_bucket = int(round(strength * 100.0))
+
+        for index in range(segments):
+            t0 = index / segments
+            t1 = (index + 1) / segments
+            xa = x0 + (x1 - x0) * t0
+            ya = y0 + (y1 - y0) * t0
+            xb = x0 + (x1 - x0) * t1
+            yb = y0 + (y1 - y0) * t1
+
+            midpoint = (t0 + t1) * 0.5
+            envelope = max(0.0, 1.0 - abs((midpoint * 2.0) - 1.0))
+            blend_amount = (envelope ** 0.85) * strength
+
+            blend_bucket = int(round(blend_amount * 100.0))
+            cache_key = (strength_bucket, blend_bucket)
+            color = self._connection_color_cache.get(cache_key)
+            if color is None:
+                color = self._blend_hex(base_color, signal_color, blend_amount)
+                self._connection_color_cache[cache_key] = color
+
+            self.canvas.create_line(xa, ya, xb, yb, fill=color, width=max(1, int(width)))
+
     def _draw_connections(
         self,
         stage_positions: dict[str, list[tuple[float, float]]],
         connections: list[dict[str, Any]],
         stage_source_indices: dict[str, list[int]],
+        stage_samples: dict[str, list[float]],
         *,
         transform: Callable[[float, float], tuple[float, float]],
     ) -> None:
+        all_abs_values = [abs(float(v)) for values in stage_samples.values() for v in values]
+        if all_abs_values:
+            mag_low, mag_high = self._robust_bounds(all_abs_values, low_q=0.10, high_q=0.90)
+            if mag_high <= mag_low:
+                mag_high = mag_low + 1e-9
+        else:
+            mag_low, mag_high = 0.0, 1.0
+
+        def edge_strength(
+            source_stage: str,
+            target_stage: str,
+            src_index: int,
+            tgt_index: int,
+            weight: float | None = None,
+        ) -> float:
+            source_values = stage_samples.get(source_stage, [])
+            target_values = stage_samples.get(target_stage, [])
+
+            src_value = abs(float(source_values[src_index])) if 0 <= src_index < len(source_values) else 0.0
+            tgt_value = abs(float(target_values[tgt_index])) if 0 <= tgt_index < len(target_values) else 0.0
+
+            magnitude = 0.5 * (src_value + tgt_value)
+            magnitude_norm = (magnitude - mag_low) / max(1e-9, mag_high - mag_low)
+            magnitude_norm = max(0.0, min(1.0, magnitude_norm))
+
+            diff = abs(src_value - tgt_value)
+            similarity = 1.0 - (diff / max(1e-9, src_value + tgt_value))
+            similarity = max(0.0, min(1.0, similarity))
+
+            transmission = 0.65 * magnitude_norm + 0.35 * similarity
+
+            if weight is not None:
+                weight_norm = abs(float(weight)) / (1.0 + abs(float(weight)))
+                transmission = 0.8 * transmission + 0.2 * weight_norm
+
+            return max(0.0, min(1.0, transmission))
+
         for connection in connections:
             source_stage = str(connection.get("from", ""))
             target_stage = str(connection.get("to", ""))
@@ -579,7 +705,8 @@ class ActivationView(ttk.Frame):
                     x0, y0 = transform(x0, y0)
                     x1, y1 = transform(x1, y1)
                     width = 1 if weight is None else min(4, max(1, int(round(abs(weight) * 2))))
-                    self.canvas.create_line(x0, y0, x1, y1, fill=CYAN, width=width)
+                    strength = edge_strength(source_stage, target_stage, src_idx, tgt_idx, weight)
+                    self._draw_gradient_connection(x0, y0, x1, y1, strength=strength, width=width)
                 continue
 
             mode = str(connection.get("mode", "paired"))
@@ -592,7 +719,8 @@ class ActivationView(ttk.Frame):
                         x1, y1 = target[tgt_index]
                         x0, y0 = transform(x0, y0)
                         x1, y1 = transform(x1, y1)
-                        self.canvas.create_line(x0, y0, x1, y1, fill=BORDER, width=1)
+                        strength = edge_strength(source_stage, target_stage, src_index, tgt_index)
+                        self._draw_gradient_connection(x0, y0, x1, y1, strength=strength, width=1)
             elif mode == "all_to_all":
                 max_lines = max(1, int(connection.get("max_lines", 256)))
                 src_step = max(1, len(source) // max(1, int(max_lines ** 0.5)))
@@ -603,7 +731,8 @@ class ActivationView(ttk.Frame):
                         x1, y1 = target[tgt_index]
                         x0, y0 = transform(x0, y0)
                         x1, y1 = transform(x1, y1)
-                        self.canvas.create_line(x0, y0, x1, y1, fill=BORDER, width=1)
+                        strength = edge_strength(source_stage, target_stage, src_index, tgt_index)
+                        self._draw_gradient_connection(x0, y0, x1, y1, strength=strength, width=1)
             elif mode == "conv1d":
                 kernel = max(1, int(connection.get("kernel_size", 3)))
                 stride = max(1, int(connection.get("stride", 1)))
@@ -615,7 +744,8 @@ class ActivationView(ttk.Frame):
                         x1, y1 = target[tgt_index]
                         x0, y0 = transform(x0, y0)
                         x1, y1 = transform(x1, y1)
-                        self.canvas.create_line(x0, y0, x1, y1, fill=BORDER, width=1)
+                        strength = edge_strength(source_stage, target_stage, src_index, tgt_index)
+                        self._draw_gradient_connection(x0, y0, x1, y1, strength=strength, width=1)
             else:
                 pairs = max(len(source), len(target))
                 for pair_index in range(pairs):
@@ -625,7 +755,8 @@ class ActivationView(ttk.Frame):
                     x1, y1 = target[tgt_index]
                     x0, y0 = transform(x0, y0)
                     x1, y1 = transform(x1, y1)
-                    self.canvas.create_line(x0, y0, x1, y1, fill=BORDER, width=1)
+                    strength = edge_strength(source_stage, target_stage, src_index, tgt_index)
+                    self._draw_gradient_connection(x0, y0, x1, y1, strength=strength, width=1)
 
     @staticmethod
     def _color_from_value(value: float, scale: float = 1.0) -> str:
@@ -678,17 +809,34 @@ class ActivationView(ttk.Frame):
         w = int(self.canvas.winfo_width() or 900)
         h = int(self.canvas.winfo_height() or 420)
 
-        if not self.model_info:
-            self.canvas.create_text(w // 2, h // 2, fill=FG_DIM, font=FONT_NORM, text="No model selected")
-            return
+        model_info = self.model_info
+        if not model_info:
+            source = self.activations if self.activations else self.gradients
+            if source:
+                lengths = [len(values) for values in source.values() if isinstance(values, list) and values]
+                seq_len_guess = max(lengths) if lengths else 64
+                num_layers_guess = len([name for name in source.keys() if str(name).startswith("encoder_")])
+                if num_layers_guess <= 0:
+                    num_layers_guess = 4
+                emb_values = source.get("embedding") if isinstance(source, dict) else None
+                embedding_dim_guess = len(emb_values) if isinstance(emb_values, list) and emb_values else seq_len_guess
+                model_info = {
+                    "model": "Live",
+                    "seq_len": int(seq_len_guess),
+                    "num_layers": int(num_layers_guess),
+                    "embedding_dim": int(embedding_dim_guess),
+                }
+            else:
+                self.canvas.create_text(w // 2, h // 2, fill=FG_DIM, font=FONT_NORM, text="No model selected")
+                return
 
-        seq_len = int(self.model_info.get("seq_len", 64))
-        num_layers = int(self.model_info.get("num_layers", 4))
-        embedding_dim = int(self.model_info.get("embedding_dim", 32))
-        title = f"{self.model_info.get('model', 'Model')} | seq={seq_len} layers={num_layers} emb={embedding_dim}"
+        seq_len = int(model_info.get("seq_len", 64))
+        num_layers = int(model_info.get("num_layers", 4))
+        embedding_dim = int(model_info.get("embedding_dim", 32))
+        title = f"{model_info.get('model', 'Model')} | seq={seq_len} layers={num_layers} emb={embedding_dim}"
         self.canvas.create_text(10, 12, anchor="nw", fill=FG_DIM, font=FONT_SM, text=title)
 
-        graph = self.model_info.get("graph") if isinstance(self.model_info.get("graph"), dict) else self._default_graph()
+        graph = model_info.get("graph") if isinstance(model_info.get("graph"), dict) else self._default_graph()
         stages = graph.get("stages", []) if isinstance(graph, dict) else []
         connections = graph.get("connections", []) if isinstance(graph, dict) else []
         if not stages:
@@ -699,13 +847,29 @@ class ActivationView(ttk.Frame):
         top = 62
         legend_height = 18
         legend_gap = 30
-        bottom = h - (24 + legend_height + legend_gap)
+        viewport_bottom = h - (24 + legend_height + legend_gap)
 
         label_area = 120
         left = label_area
         right = w - 30
         max_nodes = min(max(4, self.node_cap), seq_len)
-        node_radius = max(3, min(8, int((right - left) / max(24, len(stages) * 8))))
+        node_radius = int(self.node_radius)
+
+        max_requested_nodes = 1
+        for stage in stages:
+            try:
+                requested = int(stage.get("nodes", max_nodes))
+            except Exception:
+                requested = max_nodes
+            max_requested_nodes = max(max_requested_nodes, min(max_nodes, max(1, requested)))
+
+        base_visible_nodes = 16
+        viewport_span = max(1.0, viewport_bottom - top)
+        base_gap = viewport_span / max(1, base_visible_nodes - 1)
+        node_gap = max(4.0, base_gap * (node_radius / 5.0))
+        overflow_mode = max_requested_nodes > base_visible_nodes
+        bottom = top + ((max_requested_nodes - 1) * node_gap if overflow_mode else viewport_span)
+
         stage_positions: dict[str, list[tuple[float, float]]] = {}
         stage_samples: dict[str, list[float]] = {}
         stage_source_indices: dict[str, list[int]] = {}
@@ -727,6 +891,8 @@ class ActivationView(ttk.Frame):
                 top=top,
                 bottom=bottom,
                 max_nodes=max_nodes,
+                node_gap=node_gap,
+                overflow_mode=overflow_mode,
             )
             stage_id = str(stage.get("id", f"stage_{stage_index}"))
             stage_positions[stage_id] = positions
@@ -742,6 +908,7 @@ class ActivationView(ttk.Frame):
             stage_positions,
             connections,
             stage_source_indices,
+            stage_samples,
             transform=transform,
         )
 
@@ -800,8 +967,11 @@ class ActivationView(ttk.Frame):
             anchor="e",
             fill=FG_DIM,
             font=FONT_SM,
-            text=f"zoom={self.zoom:.2f}  nodes={self.node_cap}  (wheel=zoom, drag=pan, dbl-click=reset)",
+            text=f"nodes={self.node_cap}  node_size={self.node_radius}  (wheel/scrollbar=scroll, dbl-click=reset)",
         )
+
+        scroll_bottom = max(float(h), float(legend_bottom + 28.0))
+        self.canvas.configure(scrollregion=(0.0, 0.0, float(max(w, right + 30)), scroll_bottom))
 
 
 class VisualizerWindow(tk.Toplevel):
@@ -816,6 +986,7 @@ class VisualizerWindow(tk.Toplevel):
         self._selected_records_cache: list[RunRecord] = []
         self._latest_val_loss: float | None = None
         self._panes: dict[str, dict[str, Any]] = {}
+        self._live_graph_name: str = "Live run"
 
         self._setup_style()
         self._build_ui()
@@ -887,17 +1058,17 @@ class VisualizerWindow(tk.Toplevel):
         options_card.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         options_card.columnconfigure(1, weight=1)
 
-        ttk.Label(options_card, text="Map mode:", style="Dim.TLabel").grid(row=0, column=0, sticky="w")
-        self.map_mode_var = tk.StringVar(value="activations")
-        map_mode = ttk.Combobox(
+        ttk.Label(options_card, text="Node size:", style="Dim.TLabel").grid(row=0, column=0, sticky="w")
+        self.node_size_var = tk.StringVar(value="5")
+        node_size = ttk.Combobox(
             options_card,
-            textvariable=self.map_mode_var,
-            values=["activations", "gradients"],
+            textvariable=self.node_size_var,
+            values=["2", "3", "4", "5", "6", "7", "8"],
             state="readonly",
             width=14,
         )
-        map_mode.grid(row=0, column=1, sticky="w")
-        map_mode.bind("<<ComboboxSelected>>", self._on_map_mode_changed)
+        node_size.grid(row=0, column=1, sticky="w")
+        node_size.bind("<<ComboboxSelected>>", self._on_node_size_selected)
 
         ttk.Label(options_card, text="X-axis:", style="Dim.TLabel").grid(row=1, column=0, sticky="w", pady=(6, 0))
         self.graph_x_mode_var = tk.StringVar(value="epoch")
@@ -1013,12 +1184,28 @@ class VisualizerWindow(tk.Toplevel):
             view = ActivationView(content)
             view.grid(row=0, column=0, sticky="nsew")
             view.set_mode("activations")
+            try:
+                view.set_node_cap(int(self.node_detail_var.get().strip()))
+            except ValueError:
+                view.set_node_cap(16)
+            try:
+                view.set_node_radius(int(self.node_size_var.get().strip()))
+            except ValueError:
+                view.set_node_radius(5)
             pane["widget"] = view
         elif kind == "gradient":
             pane["title_var"].set("Architecture + gradient map")
             view = ActivationView(content)
             view.grid(row=0, column=0, sticky="nsew")
             view.set_mode("gradients")
+            try:
+                view.set_node_cap(int(self.node_detail_var.get().strip()))
+            except ValueError:
+                view.set_node_cap(16)
+            try:
+                view.set_node_radius(int(self.node_size_var.get().strip()))
+            except ValueError:
+                view.set_node_radius(5)
             pane["widget"] = view
         elif kind == "losses":
             pane["title_var"].set("Training / validation losses")
@@ -1070,6 +1257,33 @@ class VisualizerWindow(tk.Toplevel):
             status_var.set(title)
             detail_var.set(detail)
 
+    def _infer_model_info_from_profiles(
+        self,
+        activations: dict[str, Any] | None,
+        gradients: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        activation_map = activations if isinstance(activations, dict) else {}
+        gradient_map = gradients if isinstance(gradients, dict) else {}
+
+        profile_lengths: list[int] = []
+        for source in (activation_map, gradient_map):
+            for values in source.values():
+                if isinstance(values, list) and values:
+                    profile_lengths.append(len(values))
+
+        seq_len = max(profile_lengths) if profile_lengths else 64
+        encoder_like = [key for key in activation_map.keys() if str(key).startswith("encoder_")]
+        num_layers = max(1, len(encoder_like)) if encoder_like else 4
+        embedding_values = activation_map.get("embedding")
+        embedding_dim = len(embedding_values) if isinstance(embedding_values, list) and embedding_values else seq_len
+
+        return {
+            "model": "Live",
+            "seq_len": int(seq_len),
+            "num_layers": int(num_layers),
+            "embedding_dim": int(embedding_dim),
+        }
+
     def _sync_panes_with_current_state(self) -> None:
         selected = self._selected_records_cache
         if selected:
@@ -1079,6 +1293,10 @@ class VisualizerWindow(tk.Toplevel):
                     view.set_node_cap(int(self.node_detail_var.get().strip()))
                 except ValueError:
                     view.set_node_cap(16)
+                try:
+                    view.set_node_radius(int(self.node_size_var.get().strip()))
+                except ValueError:
+                    view.set_node_radius(5)
                 view.set_model(
                     current_model.config.get("model", {}),
                     current_model.last_activations,
@@ -1160,6 +1378,10 @@ class VisualizerWindow(tk.Toplevel):
                 view.set_node_cap(int(self.node_detail_var.get().strip()))
             except ValueError:
                 view.set_node_cap(16)
+            try:
+                view.set_node_radius(int(self.node_size_var.get().strip()))
+            except ValueError:
+                view.set_node_radius(5)
             view.set_model(
                 current_model.config.get("model", {}),
                 current_model.last_activations,
@@ -1169,11 +1391,6 @@ class VisualizerWindow(tk.Toplevel):
             f"Selected {len(selected)} model(s). Active: {current_model.name} | {current_model.run_dir.name}"
         )
 
-    def _on_map_mode_changed(self, _event: tk.Event | None = None) -> None:
-        mode = self.map_mode_var.get().strip().lower()
-        for view in self._activation_views():
-            view.set_mode(mode)
-
     def _on_node_detail_selected(self, _event: tk.Event | None = None) -> None:
         try:
             node_cap = int(self.node_detail_var.get().strip())
@@ -1181,6 +1398,14 @@ class VisualizerWindow(tk.Toplevel):
             node_cap = 16
         for view in self._activation_views():
             view.set_node_cap(node_cap)
+
+    def _on_node_size_selected(self, _event: tk.Event | None = None) -> None:
+        try:
+            node_radius = int(self.node_size_var.get().strip())
+        except ValueError:
+            node_radius = 5
+        for view in self._activation_views():
+            view.set_node_radius(node_radius)
 
     def _reset_architecture_view(self) -> None:
         for view in self._activation_views():
@@ -1231,7 +1456,7 @@ class VisualizerWindow(tk.Toplevel):
         with out_path.open("w", encoding="utf-8") as fh:
             fh.write("Delphi Layer Values Log\n")
             fh.write(f"timestamp: {datetime.now().isoformat()}\n")
-            fh.write(f"map_mode: {self.map_mode_var.get()}\n")
+            fh.write(f"node_size: {self.node_size_var.get()}\n")
             fh.write(f"x_axis_mode: {self.graph_x_mode_var.get()}\n")
             fh.write(f"run_dir: {str(run_dir) if run_dir is not None else 'n/a'}\n")
             fh.write("\n")
@@ -1296,7 +1521,10 @@ class VisualizerWindow(tk.Toplevel):
         if kind == "run_start":
             run_dir = payload.get("run_dir", "")
             self._set_live_status("Training started", str(run_dir))
-            model_info = payload.get("model", {})
+            model_info = payload.get("model", {}) if isinstance(payload.get("model"), dict) else {}
+            self._live_graph_name = str(payload.get("name") or Path(str(run_dir)).name or "Live run")
+            if not self._live_graph_name:
+                self._live_graph_name = "Live run"
             for view in self._activation_views():
                 view.set_model(model_info, {}, {})
             # Refresh run list so the new training run shows up
@@ -1321,13 +1549,20 @@ class VisualizerWindow(tk.Toplevel):
                 detail += " | val_loss=pending"
             self._set_live_status(status_text, detail)
             activations = payload.get("activations") or {}
-            if activations:
-                for view in self._activation_views():
-                    view.set_activations(activations)
             gradients = payload.get("gradients") or {}
-            if gradients:
+            if activations or gradients:
                 for view in self._activation_views():
-                    view.set_gradients(gradients)
+                    if not view.model_info:
+                        view.set_model(self._infer_model_info_from_profiles(activations, gradients), {}, {})
+                    view.set_profiles(activations if activations else None, gradients if gradients else None)
+
+            self._update_graph_live(
+                self._live_graph_name,
+                payload,
+                epoch,
+                {"loss": loss},
+                {},
+            )
             return
         if kind == "epoch_metrics":
             epoch = int(payload.get("epoch", 0))
@@ -1340,13 +1575,12 @@ class VisualizerWindow(tk.Toplevel):
             )
             self._latest_val_loss = float(valid.get("loss", 0.0))
             activations = valid.get("activations") or train.get("activations") or {}
-            if activations:
-                for view in self._activation_views():
-                    view.set_activations(activations)
             gradients = valid.get("gradients") or train.get("gradients") or {}
-            if gradients:
+            if activations or gradients:
                 for view in self._activation_views():
-                    view.set_gradients(gradients)
+                    if not view.model_info:
+                        view.set_model(self._infer_model_info_from_profiles(activations, gradients), {}, {})
+                    view.set_profiles(activations if activations else None, gradients if gradients else None)
             
             # Auto-select the active run if not already selected
             active_name = None
@@ -1361,6 +1595,8 @@ class VisualizerWindow(tk.Toplevel):
                 records = self._selected_records()
                 if records:
                     active_name = records[0].display_name
+            if not active_name:
+                active_name = self._live_graph_name
             
             if active_name:
                 self._update_graph_live(active_name, payload, epoch, train, valid)

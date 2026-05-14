@@ -28,7 +28,7 @@ Usage
     from gui.training_GUI import TrainingGUI, GUIConfig
     import tkinter as tk
 
-    cfg = GUIConfig(title="MyProject Training GUI", train_script="train.py")
+    cfg = GUIConfig(title="MyProject Training GUI", train_script="models/MyProject/train.py")
     root = tk.Tk()
     TrainingGUI(root, config=cfg)
     root.mainloop()
@@ -47,6 +47,8 @@ from typing import Any
 from tkinter import filedialog, messagebox, scrolledtext
 from tkinter import ttk
 import tkinter as tk
+
+from gui.visualizer import open_visualizer
 
 # ---------------------------------------------------------------------------
 # Colour / font constants
@@ -82,8 +84,8 @@ class GUIConfig:
     customisation.
     """
     title: str = "Delphi Training GUI"
-    train_script: str = "train.py"
-    infer_script: str = "infer.py"
+    train_script: str = "models/Rouge/train.py"
+    infer_script: str = "models/Rouge/infer.py"
     train_scripts_script: str = "scripts/train.py"
     infer_scripts_script: str = "scripts/infer.py"
     default_config: str = "configs/default.json"
@@ -289,6 +291,42 @@ class TrainingGUI:
         self.root.after(100, self._drain_queue)
         self.root.after(300, self._refresh_model_list)
 
+    def _project_root(self) -> Path:
+        return Path(__file__).resolve().parent.parent
+
+    def _load_config_for_resolution(self, config_path: Path) -> dict[str, Any]:
+        try:
+            with config_path.open("r", encoding="utf-8") as file:
+                loaded = json.load(file)
+            return loaded if isinstance(loaded, dict) else {}
+        except Exception:
+            return {}
+
+    def _resolve_script_from_config(self, *, config_path: Path, kind: str, fallback_script: str) -> str:
+        loaded = self._load_config_for_resolution(config_path)
+        extra = loaded.get("extra") if isinstance(loaded.get("extra"), dict) else {}
+
+        project_folder = str((extra or {}).get("project_folder", "")).strip()
+        if project_folder:
+            folder_path = (self._project_root() / project_folder).resolve()
+            candidate = folder_path / ("train.py" if kind == "train" else "infer.py")
+            if candidate.exists():
+                return str(candidate)
+
+        key = "train_entrypoint" if kind == "train" else "infer_entrypoint"
+        direct_entrypoint = str((extra or {}).get(key, "")).strip()
+        if direct_entrypoint:
+            resolved = (self._project_root() / direct_entrypoint).resolve()
+            return str(resolved) if resolved.exists() else direct_entrypoint
+
+        project_name = str((extra or {}).get("project_name", "")).strip()
+        if project_name:
+            candidate = self._project_root() / "models" / project_name / ("train.py" if kind == "train" else "infer.py")
+            if candidate.exists():
+                return str(candidate)
+
+        return fallback_script
+
     # ------------------------------------------------------------------
     # Style
     # ------------------------------------------------------------------
@@ -437,6 +475,7 @@ class TrainingGUI:
         ttk.Button(btns, text="Start Training", style="Start.TButton", command=self._start_training).pack(side="left", padx=(0, 8))
         ttk.Button(btns, text="Stop", style="Stop.TButton", command=self._stop_process).pack(side="left")
         ttk.Button(btns, text="Clear Plots", style="Viz.TButton", command=self._clear_plots).pack(side="left", padx=8)
+        ttk.Button(btns, text="Open Visualization", style="Viz.TButton", command=self._open_visualizer_window).pack(side="left", padx=8)
         ttk.Button(btns, text="Open Messages", style="Viz.TButton", command=self._open_message_window).pack(side="left", padx=8)
 
         self.training_status_var = tk.StringVar(value="Idle")
@@ -637,7 +676,7 @@ class TrainingGUI:
     # Process management
     # ------------------------------------------------------------------
 
-    def _build_train_cmd(self, script: str) -> list[str] | None:
+    def _build_train_cmd(self, script: str, *, resolve_from_config: bool = False) -> list[str] | None:
         selected_entry = self._selected_training_resume_entry()
         if selected_entry is not None:
             config = Path(str(selected_entry.get("config_path", "")).strip() or self.config_path_var.get().strip())
@@ -647,7 +686,15 @@ class TrainingGUI:
             messagebox.showerror("Missing config", f"Config file not found: {config}")
             return None
 
-        cmd = [sys.executable, "-u", script, "-c", str(config)]
+        script_to_run = script
+        if resolve_from_config:
+            script_to_run = self._resolve_script_from_config(
+                config_path=config,
+                kind="train",
+                fallback_script=script,
+            )
+
+        cmd = [sys.executable, "-u", script_to_run, "-c", str(config)]
         if self.data_path_var.get().strip():
             cmd.extend(["--data", self.data_path_var.get().strip()])
         if self.epochs_var.get().strip():
@@ -668,7 +715,7 @@ class TrainingGUI:
         if self.process is not None:
             messagebox.showwarning("Training running", "A process is already running.")
             return
-        cmd = self._build_train_cmd(self.cfg.train_script)
+        cmd = self._build_train_cmd(self.cfg.train_script, resolve_from_config=True)
         if cmd:
             self._launch_process(cmd, mode="train")
 
@@ -688,7 +735,12 @@ class TrainingGUI:
         if not config.exists():
             messagebox.showerror("Missing config", f"Config file not found: {config}")
             return
-        cmd = [sys.executable, "-u", self.cfg.infer_script, "-c", str(config)]
+        infer_script = self._resolve_script_from_config(
+            config_path=config,
+            kind="infer",
+            fallback_script=self.cfg.infer_script,
+        )
+        cmd = [sys.executable, "-u", infer_script, "-c", str(config)]
         inp = self.infer_input_var.get().strip()
         if inp:
             cmd.extend(["--input", inp])
@@ -732,7 +784,7 @@ class TrainingGUI:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            cwd=str(Path(__file__).resolve().parent.parent.parent),  # project root
+            cwd=str(self._project_root()),  # project root
             bufsize=1,
         )
         self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
@@ -1061,12 +1113,22 @@ class TrainingGUI:
             except tk.TclError:
                 self.message_window = MessageWindow(self.root)
 
+    def _open_visualizer_window(self) -> None:
+        if self.visualizer_window is None or not self.visualizer_window.winfo_exists():
+            self.visualizer_window = open_visualizer(self.root, self._project_root() / self.cfg.runs_dir)
+        else:
+            try:
+                self.visualizer_window.lift()
+                self.visualizer_window.focus_force()
+            except tk.TclError:
+                self.visualizer_window = open_visualizer(self.root, self._project_root() / self.cfg.runs_dir)
+
     # ------------------------------------------------------------------
     # Registry / model list
     # ------------------------------------------------------------------
 
     def _registry_path(self) -> Path:
-        return Path(__file__).resolve().parent.parent.parent / self.cfg.runs_dir / self.cfg.registry_filename
+        return self._project_root() / self.cfg.runs_dir / self.cfg.registry_filename
 
     def _refresh_model_list(self) -> None:
         reg_path = self._registry_path()
