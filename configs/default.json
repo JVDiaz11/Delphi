@@ -1,0 +1,50 @@
+{
+  "_comment": "Delphi generic config schema (architecture-agnostic). Copy this file and replace values.",
+  "_comment_top_level": "Required top-level keys: name, seed, data, model, optimizer, trainer, extra.",
+  "_comment_gui": "GUI always passes -c <config>. Optional CLI overrides from GUI: --data --epochs --batch-size --device --resume-checkpoint.",
+  "_comment_paths": "data.path can point anywhere (absolute path recommended when datasets live outside Delphi).",
+  "name": "my_experiment",
+  "seed": 42,
+  "data": {
+    "_comment": "Dataset/DataLoader settings consumed by your DataLoader factory.",
+    "_comment_required": "Required conventions: batch_size > 0, train_split in (0,1), path points to your dataset root/file.",
+    "_comment_path_examples": "Windows: C:/datasets/project_a/train.csv | Linux: /mnt/data/project_a/train.csv",
+    "batch_size": 64,
+    "train_split": 0.1,
+    "num_workers": 4,
+    "path": "C:/path/to/your/dataset"
+  },
+  "model": {
+    "_comment": "All keys here are forwarded to model __init__ as kwargs (works for DNN, CNN, Transformer, etc.).",
+    "_comment_required": "Only include constructor kwargs expected by your model class.",
+    "hidden_size": 256,
+    "num_layers": 4
+  },
+  "optimizer": {
+    "_comment": "Optimizer hyperparameters used by trainer_factory.",
+    "lr": 0.001,
+    "weight_decay": 1e-5
+  },
+  "trainer": {
+    "_comment": "Trainer runtime settings.",
+    "_comment_required": "Required conventions: epochs > 0, device in {auto,cpu,cuda...}, save_dir is writable.",
+    "_comment_save_dir": "Runs are saved as <save_dir>/<name>/<YYYYMMDD_HHMMSS>.",
+    "epochs": 50,
+    "device": "auto",
+    "save_dir": "runs",
+    "save_best_only": true,
+    "grad_clip": 1.0,
+    "log_every_epochs": 5,
+    "log_every_steps": 100
+  },
+  "inference": {
+    "_comment": "Optional epoch-end inference telemetry for the GUI Inference tab.",
+    "_comment_required": "Set every_epochs to 0 to disable, or a positive integer (e.g., 5) to run every N epochs.",
+    "every_epochs": 0,
+    "max_points": 128
+  },
+  "extra": {
+    "_comment": "Project-specific metadata only. Keep custom domain keys here (example: model_type, task_name, tags, tokenizer_path).",
+    "model_type": "default"
+  }
+}

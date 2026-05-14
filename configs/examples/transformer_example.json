@@ -1,0 +1,47 @@
+{
+  "_comment": "Example 3: Transformer architecture config. Copy and modify.",
+  "_comment_purpose": "Architecture starter only; adapt for your own modality/task.",
+  "name": "transformer_example_run",
+  "seed": 42,
+  "data": {
+    "_comment_modify_here": "Path to tokenized dataset, parquet/csv/jsonl, or dataset directory (external path supported).",
+    "path": "E:/datasets/nlp/project_y/tokenized_train.jsonl",
+    "batch_size": 32,
+    "train_split": 0.1,
+    "num_workers": 4
+  },
+  "model": {
+    "_comment_modify_here": "Example transformer kwargs; keep only fields your model constructor expects.",
+    "num_embeddings": 32000,
+    "d_model": 512,
+    "n_heads": 8,
+    "n_layers": 6,
+    "ffn_dim": 2048,
+    "max_seq_len": 512,
+    "dropout": 0.1
+  },
+  "optimizer": {
+    "lr": 0.0001,
+    "weight_decay": 0.01
+  },
+  "trainer": {
+    "epochs": 30,
+    "device": "auto",
+    "save_dir": "runs",
+    "save_best_only": true,
+    "grad_clip": 1.0,
+    "log_every_epochs": 1,
+    "log_every_steps": 50
+  },
+  "inference": {
+    "_comment_modify_here": "Set every_epochs=0 to disable, or >0 to stream epoch inference to the GUI Inference tab.",
+    "every_epochs": 5,
+    "max_points": 128
+  },
+  "extra": {
+    "_comment_modify_here": "Project metadata, tokenizer hints, and inference/runtime flags.",
+    "model_type": "transformer",
+    "task_name": "custom_task",
+    "runtime_hint": "optional_project_specific_flag"
+  }
+}

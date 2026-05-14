@@ -1,0 +1,46 @@
+{
+  "_comment": "Example Delphi-compatible config for a new project.",
+  "_comment_top_level": "Keep top-level keys: name, seed, data, model, optimizer, trainer, extra.",
+  "_comment_paths": "data.path can be absolute and point outside Delphi (recommended for multi-project datasets).",
+  "name": "my_experiment",
+  "seed": 42,
+  "data": {
+    "_comment": "Required conventions: batch_size > 0, train_split in (0,1), and a valid path.",
+    "_comment_path_examples": "C:/datasets/project_a/train.csv | D:/ml_data/my_project/ | /mnt/data/project_a/",
+    "path": "C:/datasets/project_a/train.csv",
+    "batch_size": 64,
+    "train_split": 0.1,
+    "num_workers": 4
+  },
+  "model": {
+    "_comment": "These keys are forwarded as kwargs to MyModel.__init__. Replace with your architecture-specific parameters.",
+    "input_size": 128,
+    "hidden_size": 256,
+    "output_size": 16,
+    "num_layers": 4
+  },
+  "optimizer": {
+    "_comment": "Optimizer hyperparameters used by trainer_factory.",
+    "lr": 0.001,
+    "weight_decay": 1e-5
+  },
+  "trainer": {
+    "_comment": "Trainer settings. Device can be auto/cpu/cuda.",
+    "epochs": 50,
+    "device": "auto",
+    "save_dir": "runs",
+    "save_best_only": true,
+    "grad_clip": 1.0,
+    "log_every_epochs": 5,
+    "log_every_steps": 100
+  },
+  "inference": {
+    "_comment": "Run epoch-end inference updates in GUI. Set every_epochs=0 to disable.",
+    "every_epochs": 5,
+    "max_points": 128
+  },
+  "extra": {
+    "_comment": "Put project/domain-specific metadata here.",
+    "model_type": "my_model_v1"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "_comment": "Example 2: CNN architecture config. Copy and modify.",
+  "_comment_purpose": "Architecture starter only; adapt channels/heads/outputs for your own task.",
+  "name": "cnn_example_run",
+  "seed": 42,
+  "data": {
+    "_comment_modify_here": "Point to your image dataset root/index path. Can be anywhere on disk.",
+    "path": "D:/datasets/vision/project_x/images",
+    "batch_size": 64,
+    "train_split": 0.1,
+    "num_workers": 8
+  },
+  "model": {
+    "_comment_modify_here": "Example CNN kwargs; adapt to your own model signature.",
+    "in_channels": 3,
+    "num_classes": 100,
+    "base_channels": 64,
+    "depth": 4,
+    "dropout": 0.3
+  },
+  "optimizer": {
+    "lr": 0.0005,
+    "weight_decay": 0.0001
+  },
+  "trainer": {
+    "epochs": 120,
+    "device": "auto",
+    "save_dir": "runs",
+    "save_best_only": true,
+    "grad_clip": 1.0,
+    "log_every_epochs": 5,
+    "log_every_steps": 100
+  },
+  "inference": {
+    "_comment_modify_here": "Set every_epochs=0 to disable, or >0 to stream epoch inference to the GUI Inference tab.",
+    "every_epochs": 5,
+    "max_points": 128
+  },
+  "extra": {
+    "_comment_modify_here": "Registry metadata and project-specific options.",
+    "model_type": "cnn",
+    "task_name": "custom_task",
+    "input_spec": "custom_input_spec"
+  }
+}

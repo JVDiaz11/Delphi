@@ -1,0 +1,45 @@
+{
+  "_comment": "Example 1: MLP/DNN architecture config. Copy and modify.",
+  "_comment_purpose": "Architecture starter only; adapt for your own task and data representation.",
+  "name": "mlp_example_run",
+  "seed": 42,
+  "data": {
+    "_comment_modify_here": "Set your own dataset location. This can be outside Delphi.",
+    "path": "C:/datasets/my_tabular_project/train.csv",
+    "batch_size": 128,
+    "train_split": 0.1,
+    "num_workers": 4
+  },
+  "model": {
+    "_comment_modify_here": "Forwarded as kwargs to your model constructor.",
+    "input_size": 256,
+    "hidden_size": 512,
+    "output_size": 10,
+    "num_layers": 3,
+    "dropout": 0.2
+  },
+  "optimizer": {
+    "lr": 0.001,
+    "weight_decay": 0.00001
+  },
+  "trainer": {
+    "epochs": 80,
+    "device": "auto",
+    "save_dir": "runs",
+    "save_best_only": true,
+    "grad_clip": 1.0,
+    "log_every_epochs": 5,
+    "log_every_steps": 100
+  },
+  "inference": {
+    "_comment_modify_here": "Set every_epochs=0 to disable, or >0 to stream epoch inference to the GUI Inference tab.",
+    "every_epochs": 5,
+    "max_points": 128
+  },
+  "extra": {
+    "_comment_modify_here": "Metadata used by Delphi registry and GUI filters.",
+    "model_type": "mlp",
+    "task_name": "custom_task",
+    "dataset_name": "custom_dataset"
+  }
+}
