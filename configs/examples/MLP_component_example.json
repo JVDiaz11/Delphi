@@ -1,0 +1,65 @@
+{
+  "_comment": "Minimal component-factory MLP example. Copy and adapt import paths to your project modules.",
+  "name": "mlp_component_example_run",
+  "seed": 42,
+  "data": {
+    "path": "C:/datasets/my_tabular_project/train.csv",
+    "batch_size": 128,
+    "train_split": 0.1,
+    "num_workers": 4
+  },
+  "model": {
+    "input_size": 256,
+    "hidden_size": 512,
+    "output_size": 10,
+    "num_layers": 3,
+    "dropout": 0.2
+  },
+  "optimizer": {
+    "lr": 0.001,
+    "weight_decay": 0.00001
+  },
+  "loss": {
+    "label_smoothing": 0.0
+  },
+  "trainer": {
+    "epochs": 50,
+    "device": "auto",
+    "save_dir": "runs",
+    "save_best_only": true,
+    "grad_clip": 1.0,
+    "log_every_epochs": 5,
+    "log_every_steps": 100
+  },
+  "inference": {
+    "every_epochs": 0,
+    "max_points": 128
+  },
+  "extra": {
+    "_comment": "Project routing and generic component-factory enablement.",
+    "project_folder": "models/my_project",
+    "project_name": "my_project",
+    "train_entrypoint": "models/my_project/train.py",
+    "infer_entrypoint": "models/my_project/infer.py",
+    "trainer_factory_path": "core/component_factory.py",
+    "model_type": "mlp_component"
+  },
+  "components": {
+    "_comment": "Replace all paths below with your own project modules.",
+    "data_builder": "models.my_project.project_components.build_data",
+    "model_class": "models.my_project.model.MyModel",
+    "criterion_class": "torch.nn.CrossEntropyLoss",
+    "criterion_init": {
+      "label_smoothing": "$loss.label_smoothing"
+    },
+    "optimizer_class": "torch.optim.AdamW",
+    "trainer_class": "core.trainer.Trainer",
+    "trainer_init": {
+      "grad_clip": "$trainer.grad_clip"
+    },
+    "metric_fns": {
+      "accuracy": "models.my_project.metrics.accuracy"
+    },
+    "inference_fn": "models.my_project.project_components.run_inference"
+  }
+}

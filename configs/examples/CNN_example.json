@@ -38,6 +38,18 @@
   },
   "extra": {
     "_comment_modify_here": "Registry metadata and project-specific options.",
+    "_comment_routing": "Set project_name (or explicit entrypoint paths) so GUI launches models/<ProjectName>/train.py and infer.py.",
+    "project_folder": "models/Rouge",
+    "project_name": "Rouge",
+    "train_entrypoint": "models/Rouge/train.py",
+    "infer_entrypoint": "models/Rouge/infer.py",
+    "trainer_factory_path": "template/my_project/trainer_factory.py",
+    "factory": {
+      "project": "MyProject",
+      "pipeline": "cnn",
+      "training_profile": "standard",
+      "backend": "internal"
+    },
     "model_type": "cnn",
     "task_name": "custom_task",
     "input_spec": "custom_input_spec"

@@ -1,0 +1,82 @@
+{
+  "_comment": "Rouge guided profile adapted to Delphi models/<ProjectName> structure.",
+  "name": "delphi_hash_inference_guided",
+  "training_profile": "guided",
+  "seed": 123,
+  "data": {
+    "_comment": "Copied from Rouge guided config. Update csv_path if your dataset location differs.",
+    "csv_path": "C:/Users/Jesus/Work/Ars_Iustitia/learning_test/Rouge/Delphi/database/sha256_pairs.csv",
+    "token_mode": "hex",
+    "max_samples": null,
+    "train_split": 0.8,
+    "batch_size": 64,
+    "num_workers": 4,
+    "shuffle": true,
+    "hash_len": 64
+  },
+  "model": {
+    "seq_len": 64,
+    "vocab_size": 16,
+    "embedding_dim": 128,
+    "num_heads": 8,
+    "num_layers": 8,
+    "ff_dim": 512,
+    "dropout": 0.1
+  },
+  "optimizer": {
+    "lr": 0.001,
+    "weight_decay": 0.00001
+  },
+  "loss": {
+    "label_smoothing": 0.02,
+    "inference_closeness_weight": 0.5,
+    "top_k_metrics": [3, 5],
+    "pow_weight": 0.1,
+    "difficulty_target": "000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "inference": {
+    "mode": "guided",
+    "search_budget": 4096,
+    "mutable_positions": 12,
+    "top_k_per_position": 4,
+    "difficulty_target": "000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "trainer": {
+    "epochs": 100,
+    "device": "auto",
+    "save_dir": "runs",
+    "save_best_only": true,
+    "grad_clip": 1.0,
+    "log_every_epochs": 5,
+    "log_every_steps": 64
+  },
+  "extra": {
+    "_comment": "Delphi project-folder routing + component-factory wiring.",
+    "project_folder": "models/Rouge",
+    "project_name": "Rouge",
+    "train_entrypoint": "models/Rouge/train.py",
+    "infer_entrypoint": "models/Rouge/infer.py",
+    "trainer_factory_path": "core/component_factory.py",
+    "model_type": "rouge_hash_guided"
+  },
+  "components": {
+    "_comment": "Classes/functions are loaded by import path from JSON.",
+    "data_builder": "models.Rouge.project_components.build_data",
+    "model_class": "models.Rouge.model.hash_inference.HashInferenceDNN",
+    "criterion_class": "torch.nn.CrossEntropyLoss",
+    "criterion_init": {
+      "label_smoothing": "$loss.label_smoothing"
+    },
+    "optimizer_class": "torch.optim.AdamW",
+    "trainer_class": "models.Rouge.trainer.hash_trainer.HashTrainer",
+    "trainer_init": {
+      "grad_clip": "$trainer.grad_clip",
+      "closeness_weight": "$loss.inference_closeness_weight",
+      "top_k_values": "$loss.top_k_metrics",
+      "pow_weight": "$loss.pow_weight",
+      "difficulty_target": "$loss.difficulty_target",
+      "token_mode": "$data.token_mode"
+    },
+    "inference_fn": "models.Rouge.project_components.run_inference"
+  }
+}

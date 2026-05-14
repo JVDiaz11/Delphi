@@ -44,7 +44,41 @@
     "max_points": 128
   },
   "extra": {
-    "_comment": "Project-specific metadata only. Keep custom domain keys here (example: model_type, task_name, tags, tokenizer_path).",
+    "_comment": "Project-specific metadata and entrypoint routing.",
+    "_comment_project_folder": "Preferred: set project_folder to models/<ProjectName> to resolve train.py, infer.py, and local trainer_factory.py.",
+    "_comment_project_name": "If set, GUI resolves scripts as models/<project_name>/train.py and models/<project_name>/infer.py.",
+    "_comment_entrypoints": "Optional explicit override paths from Delphi root: train_entrypoint, infer_entrypoint.",
+    "_comment_factory": "trainer_factory_path controls the actual model/data/loss wiring used by train/inference.",
+    "_comment_factory_contract": "Optional: extra.factory is a validated contract consumed by project factories.",
+    "project_folder": "models/Rouge",
+    "project_name": "Rouge",
+    "train_entrypoint": "models/Rouge/train.py",
+    "infer_entrypoint": "models/Rouge/infer.py",
+    "trainer_factory_path": "template/my_project/trainer_factory.py",
+    "factory": {
+      "project": "MyProject",
+      "pipeline": "default",
+      "training_profile": "default"
+    },
     "model_type": "default"
+  },
+  "components": {
+    "_comment": "Optional component-driven wiring (used when extra.trainer_factory_path = core/component_factory.py).",
+    "_comment_refs": "You can reference values via $section.key, e.g. $loss.label_smoothing.",
+    "data_builder": "models.MyProject.project_components.build_data",
+    "model_class": "models.MyProject.model.MyModel",
+    "criterion_class": "torch.nn.CrossEntropyLoss",
+    "criterion_init": {
+      "label_smoothing": "$loss.label_smoothing"
+    },
+    "optimizer_class": "torch.optim.AdamW",
+    "trainer_class": "core.trainer.Trainer",
+    "trainer_init": {
+      "grad_clip": "$trainer.grad_clip"
+    },
+    "metric_fns": {
+      "accuracy": "models.MyProject.metrics.accuracy"
+    },
+    "inference_fn": "models.MyProject.project_components.run_inference"
   }
 }

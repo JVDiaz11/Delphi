@@ -40,6 +40,18 @@
   },
   "extra": {
     "_comment_modify_here": "Project metadata, tokenizer hints, and inference/runtime flags.",
+    "_comment_routing": "Set project_name (or explicit entrypoint paths) so GUI launches models/<ProjectName>/train.py and infer.py.",
+    "project_folder": "models/Rouge",
+    "project_name": "Rouge",
+    "train_entrypoint": "models/Rouge/train.py",
+    "infer_entrypoint": "models/Rouge/infer.py",
+    "trainer_factory_path": "template/my_project/trainer_factory.py",
+    "factory": {
+      "project": "MyProject",
+      "pipeline": "transformer",
+      "training_profile": "standard",
+      "backend": "internal"
+    },
     "model_type": "transformer",
     "task_name": "custom_task",
     "runtime_hint": "optional_project_specific_flag"

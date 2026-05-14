@@ -38,6 +38,18 @@
   },
   "extra": {
     "_comment_modify_here": "Metadata used by Delphi registry and GUI filters.",
+    "_comment_routing": "Set project_name (or explicit entrypoint paths) so GUI launches models/<ProjectName>/train.py and infer.py.",
+    "project_folder": "models/Rouge",
+    "project_name": "Rouge",
+    "train_entrypoint": "models/Rouge/train.py",
+    "infer_entrypoint": "models/Rouge/infer.py",
+    "trainer_factory_path": "template/my_project/trainer_factory.py",
+    "factory": {
+      "project": "MyProject",
+      "pipeline": "mlp",
+      "training_profile": "standard",
+      "backend": "internal"
+    },
     "model_type": "mlp",
     "task_name": "custom_task",
     "dataset_name": "custom_dataset"
